@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"runtime"
@@ -54,8 +55,15 @@ func main() {
 }
 
 func run() error {
+
+	binName := "eqitemsniff"
+
+	if runtime.GOOS == "windows" {
+		binName = "eqitemsniff.exe"
+	}
+	usage := fmt.Sprintf("usage: %s [list | networkID] [-n]", binName)
 	if len(os.Args) < 2 {
-		fmt.Println("usage: eqitemsniff [list,networkID]")
+		fmt.Println(usage)
 		os.Exit(1)
 	}
 
@@ -90,6 +98,13 @@ func run() error {
 		return nil
 	}
 
+	isNoiseMode := false
+	for _, arg := range os.Args {
+		if arg == "-n" {
+			isNoiseMode = true
+		}
+	}
+
 	networkID, err := strconv.Atoi(op)
 	if err != nil {
 		return errors.Wrap(err, "invalid networkID")
@@ -111,18 +126,58 @@ func run() error {
 		i++
 	}
 
-	if err := scan(deviceName); err != nil {
+	if err := scan(deviceName, isNoiseMode); err != nil {
 		return err
 	}
 
-	fmt.Println("usage: eqitemsniff [list,deviceid]")
+	fmt.Println(usage)
 	os.Exit(1)
-
 	return nil
 }
 
-func scan(deviceName string) error {
+func scan(deviceName string, isNoiseMode bool) error {
 	var packets []*analyzer.EQPacket
+
+	path := "noise.txt"
+
+	ignoreOps := []int{}
+	_, err := os.Stat(path)
+	if err != nil {
+		_, err = os.Create(path)
+		if err != nil {
+			return err
+		}
+	}
+	f, err := os.Open(path)
+	if err == nil {
+		r := bufio.NewScanner(f)
+		line := 0
+		for r.Scan() {
+			line++
+			op, err := strconv.Atoi(r.Text())
+			if err != nil {
+				return errors.Wrapf(err, "line %d", line)
+			}
+			ignoreOps = append(ignoreOps, op)
+		}
+		f.Close()
+	} else if err != os.ErrNotExist {
+		return err
+	}
+
+	if isNoiseMode {
+		f, err = os.Create(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		for _, op := range ignoreOps {
+			_, err = f.WriteString(fmt.Sprintf("%d\n", op))
+			if err != nil {
+				return errors.Wrapf(err, "write %d", op)
+			}
+		}
+	}
 	a, err := analyzer.New()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize analyzer")
@@ -131,6 +186,7 @@ func scan(deviceName string) error {
 	a.GoDump = false
 	a.HexDump = false
 
+	log.Debug().Msg("opening capture")
 	handle, err := pcap.OpenLive(deviceName, 1600, false, pcap.BlockForever)
 	if err != nil {
 		return errors.Wrap(err, "failed to start capture")
@@ -143,7 +199,7 @@ func scan(deviceName string) error {
 	//filter := "udp and dst host 69.174 or src 69.174"
 	filter := "udp and (src host 69.174 or dst host 69.174)"
 	//filter := "udp and dst host 69.174.201.148 or src host 69.174.201.148"
-	fmt.Println("    Filter: ", filter)
+	log.Info().Msgf("capturing with filter: %s", filter)
 	err = handle.SetBPFFilter(filter)
 	if err != nil {
 		return errors.Wrapf(err, "bpffilter(%s):", filter)
@@ -158,14 +214,34 @@ func scan(deviceName string) error {
 
 		packets, err = a.DecodePSPacket(psPacket)
 		if err != nil {
+			log.Warn().Err(err).Msg("decodepspacket")
 			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
-			fmt.Printf("failed to decode: %s\n", err.Error())
+			//fmt.Printf("failed to decode: %s\n", err.Error())
 		}
 
 		for _, packet := range packets {
-			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
-			fmt.Println("final packet", packet)
+			if packet.OpCodeLabel != "Unknown" {
+				log.Info().Str("opcode", packet.OpCodeLabel).Msgf(a.Dump(packet.Data))
+			}
+			if isNoiseMode {
+				isKnown := false
+				for _, op := range ignoreOps {
+					if op == int(packet.OpCode) {
+						isKnown = true
+						break
+					}
+				}
+				if isKnown {
+					continue
+				}
+				f.WriteString(fmt.Sprintf("%d\n", int(packet.OpCode)))
+				ignoreOps = append(ignoreOps, int(packet.OpCode))
+			}
+			log.Info().Msg(packet.String())
 			fmt.Println(a.Dump(packet.Data))
+			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
+			//fmt.Println("final packet", packet)
+
 			//var adv *analyzer.AdvLoot
 			//adv, err = analyzer.NewAdvLoot(packet.Data)
 			//if err == nil && adv != nil { //&& packet.DestinationPort == "57889" {

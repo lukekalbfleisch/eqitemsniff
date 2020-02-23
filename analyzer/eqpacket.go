@@ -26,7 +26,7 @@ func newPacket(data []byte) (*EQPacket, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("data payload < 4")
 	}
-	//fmt.Println(hex.Dump(data))
+	//log.Debug().Msg(hex.Dump(data))
 	offset := 0
 	if data[0] == 0 {
 		packet.OpCode = binary.BigEndian.Uint16(data[0:2])
@@ -39,6 +39,25 @@ func newPacket(data []byte) (*EQPacket, error) {
 		return nil, fmt.Errorf("offset out of bounds")
 	}
 	packet.Data = data[offset:]
+
+	switch packet.OpCode {
+	case 0x7e7:
+		packet.OpCodeLabel = "Book Op Code"
+	case 0x2cde:
+		packet.OpCodeLabel = "Link Op Code"
+	case 0x1f68:
+		packet.OpCodeLabel = "Adv Op Code"
+	case 0x26a7:
+		packet.OpCodeLabel = "Recipe Op Code"
+	case 0x5511:
+		packet.OpCodeLabel = "RecipeList Op Code"
+	case 0x7207:
+		packet.OpCodeLabel = "Item Preview Op Code"
+	case 0x545c:
+		packet.OpCodeLabel = "Item Reward Op Code"
+	default:
+		packet.OpCodeLabel = "Unknown"
+	}
 	return packet, nil
 }
 

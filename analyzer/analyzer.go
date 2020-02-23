@@ -130,27 +130,20 @@ func (a *Analyzer) Decode(data []byte) (packets []*EQPacket, err error) {
 			}
 
 		}
-		if a.Debug {
-			log.Debug().Msg("oversized")
-		}
+		log.Debug().Msg("oversized")
 	case OPPrefixPacket: //09
 		packet, err = newPacket(data)
 		if err != nil {
 			return
 		}
 		packets = append(packets, packet)
-		if a.Debug {
-			log.Debug().Msg("packet")
-		}
 	case OPPrefixAck: //15
 		packet, err = newPacket(data)
 		if err != nil {
 			return
 		}
 		packets = append(packets, packet)
-		if a.Debug {
-			log.Debug().Msg("ack")
-		}
+		log.Debug().Msg("ack")
 	case OPPrefixCombined: //03
 		data = data[:len(data)-2] //strip CRC code off tail
 
@@ -189,14 +182,10 @@ func (a *Analyzer) Decode(data []byte) (packets []*EQPacket, err error) {
 			}
 			runner += pSize
 		}
-		if a.Debug {
-			log.Debug().Msg("combined")
-		}
+		log.Debug().Msg("combined")
 	default:
 		//err = fmt.Errorf("unknown prefix: %#x", prefix)
-		if a.Debug {
-			log.Debug().Msg("unknown")
-		}
+		log.Debug().Msg("unknown")
 		return
 	}
 
