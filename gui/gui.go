@@ -3,6 +3,7 @@ package gui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -26,8 +27,23 @@ type GUI struct {
 	devices         []string
 	isCaptureMode   bool
 	captureStopChan chan bool
-	packets         map[uint16][]*analyzer.EQPacket
+	packets         []Packet
 	packetCount     int
+}
+
+type byTime []Packet
+
+func (s byTime) Less(i, j int) bool { return s[i].LastAdded.Before(s[j].LastAdded) }
+func (s byTime) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
+func (s byTime) Len() int           { return len(s) }
+
+// Packet displays a eqpacket
+type Packet struct {
+	OpCode    uint16
+	Count     int
+	Packets   []*analyzer.EQPacket
+	LastAdded time.Time
+	LastSize  int
 }
 
 // New creates a new GUI
@@ -35,7 +51,7 @@ func New(ctx context.Context, cancel context.CancelFunc) (*GUI, error) {
 	g := &GUI{
 		ctx:     ctx,
 		cancel:  cancel,
-		packets: make(map[uint16][]*analyzer.EQPacket),
+		packets: []Packet{},
 	}
 	encoding.Register()
 	s, err := tcell.NewScreen()
@@ -70,12 +86,32 @@ func (g *GUI) Clear() {
 // AddPacket adds a new packet to track
 func (g *GUI) AddPacket(packet *analyzer.EQPacket) {
 	g.mutex.Lock()
-	if g.packets[packet.OpCode] == nil {
-		g.packets[packet.OpCode] = []*analyzer.EQPacket{}
+
+	isFound := false
+	for _, p := range g.packets {
+		if p.OpCode != packet.OpCode {
+			continue
+		}
+		p.Packets = append(p.Packets, packet)
+		p.Count += len(p.Packets)
+		p.LastAdded = time.Now()
+		p.LastSize = len(packet.Data)
+		isFound = true
+		break
 	}
-	g.packets[packet.OpCode] = append(g.packets[packet.OpCode], packet)
-	g.packetCount++
-	g.status = fmt.Sprintf("packet total: %d", g.packetCount)
+	if !isFound {
+		p := Packet{
+			Count:     1,
+			Packets:   []*analyzer.EQPacket{},
+			OpCode:    packet.OpCode,
+			LastAdded: time.Now(),
+			LastSize:  len(packet.Data),
+		}
+		p.Packets = append(p.Packets, packet)
+		g.packets = append(g.packets, p)
+	}
+	sort.Sort(sort.Reverse(byTime(g.packets)))
+
 	g.mutex.Unlock()
 }
 
@@ -139,6 +175,7 @@ func (g *GUI) loop() {
 			for i, device := range g.devices {
 				emitStr(s, 37, i+4, white, device)
 			}
+			s.Show()
 		}
 
 		statusHeight := 6
@@ -146,14 +183,16 @@ func (g *GUI) loop() {
 			drawBox(s, 36, 1, w-1, h-2, captureStyle, ' ')
 			emitStr(s, 37, 2, captureStyle, "Capturing...")
 			i := 0
-			for op, packets := range g.packets {
-				emitStr(s, 37, i+3, captureStyle, fmt.Sprintf("0x%x %d", op, len(packets)))
+			for _, packet := range g.packets {
+				emitStr(s, 37, i+3, captureStyle, fmt.Sprintf("0x%x %d [%d bytes]", packet.OpCode, len(packet.Packets), packet.LastSize))
 				i++
-				if i > 20 {
+				if i > h-6 {
 					break
 				}
 			}
+
 			statusHeight = h - 2
+			s.Show()
 		}
 
 		drawBox(s, 1, 1, 35, statusHeight, white, ' ')

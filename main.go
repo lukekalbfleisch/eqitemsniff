@@ -224,10 +224,20 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 				log.Info().Str("opcode", packet.OpCodeLabel).Msgf(a.Dump(packet.Data))
 			}
 
+			if len(packet.Data) == 0 {
+				continue
+			}
+			if len(packet.Data) == 16 {
+				continue
+			}
+			if len(packet.Data) == 36 {
+				continue
+			}
 			g.AddPacket(packet)
 
 			log.Info().Msg(packet.String())
-			fmt.Println(a.Dump(packet.Data))
+			log.Info().Msg(a.Dump(packet.Data))
+			//fmt.Println(a.Dump(packet.Data))
 			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
 			//fmt.Println("final packet", packet)
 

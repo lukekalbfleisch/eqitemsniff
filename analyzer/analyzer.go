@@ -21,9 +21,9 @@ const (
 	// OPPrefixSixty is not yet used
 	OPPrefixSixty = byte(0x60)
 	// OPPrefixOversized is for fragmented packets
-	OPPrefixOversized = byte(0x0d)
+	OPPrefixOversized = byte(0x0d) //13
 	// OPPrefixPacket is a complete packet in one data payload
-	OPPrefixPacket = byte(0x09)
+	OPPrefixPacket = byte(0x09) //9
 	// OPPrefixAck is a complete packet in one data payload
 	OPPrefixAck = byte(0x15)
 	// OPPrefixCombined is a CRC encoded packet
@@ -57,7 +57,9 @@ func (a *Analyzer) Decode(data []byte) (packets []*EQPacket, err error) {
 	var ok bool
 	packets = []*EQPacket{}
 	var packet *EQPacket
+
 	prefix := data[0:2]
+
 	data = data[2:]
 	if len(data) < 4 {
 		err = fmt.Errorf("packet must be at least 4 bytes, got: %d", len(data))

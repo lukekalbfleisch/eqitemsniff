@@ -13,6 +13,7 @@
 
 
 log.txt
+cp.sh
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
