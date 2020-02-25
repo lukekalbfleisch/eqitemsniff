@@ -1,9 +1,8 @@
 package analyzer
 
 import (
-	"encoding/binary"
+	"encoding/xml"
 	"fmt"
-	"net"
 	"time"
 )
 
@@ -11,56 +10,43 @@ import (
 type EQPacket struct {
 	OpCode          uint16
 	OpCodeLabel     string
-	SourceIP        net.IP
+	SourceIP        string
 	SourcePort      string
-	DestinationIP   net.IP
+	DestinationIP   string
 	DestinationPort string
 	Data            []byte
 	Timestamp       time.Time
 }
 
-// newPacket creates a new generic EQ packet based on data provided
-func newPacket(data []byte) (*EQPacket, error) {
-	packet := new(EQPacket)
-
-	if len(data) < 4 {
-		return nil, fmt.Errorf("data payload < 4")
-	}
-	//log.Debug().Msg(hex.Dump(data))
-	offset := 0
-	if data[0] == 0 {
-		packet.OpCode = binary.BigEndian.Uint16(data[0:2])
-		offset = 2
-	} else {
-		packet.OpCode = binary.BigEndian.Uint16(data[2:4])
-		offset = 4
-	}
-	if offset > len(data) {
-		return nil, fmt.Errorf("offset out of bounds")
-	}
-	packet.Data = data[offset:]
-
-	switch packet.OpCode {
-	case 0x7e7:
-		packet.OpCodeLabel = "Book Op Code"
-	case 0x2cde:
-		packet.OpCodeLabel = "Link Op Code"
-	case 0x1f68:
-		packet.OpCodeLabel = "Adv Op Code"
-	case 0x26a7:
-		packet.OpCodeLabel = "Recipe Op Code"
-	case 0x5511:
-		packet.OpCodeLabel = "RecipeList Op Code"
-	case 0x7207:
-		packet.OpCodeLabel = "Item Preview Op Code"
-	case 0x545c:
-		packet.OpCodeLabel = "Item Reward Op Code"
-	default:
-		packet.OpCodeLabel = "Unknown"
-	}
-	return packet, nil
+// SEQOPCodeXML is parsed from ShowEQ
+type SEQOPCodeXML struct {
+	XMLName xml.Name `xml:"seqopcodes"`
+	Text    string   `xml:",chardata"`
+	Opcodes []struct {
+		Op      uint16
+		Text    string `xml:",chardata"`
+		ID      string `xml:"id,attr"`
+		Name    string `xml:"name,attr"`
+		Updated string `xml:"updated,attr"`
+		Update  string `xml:"update,attr"`
+		Comment struct {
+			Text    string `xml:",chardata"`
+			Payload struct {
+				Text          string `xml:",chardata"`
+				Dir           string `xml:"dir,attr"`
+				Typename      string `xml:"typename,attr"`
+				Sizechecktype string `xml:"sizechecktype,attr"`
+			} `xml:"payload"`
+		} `xml:"comment"`
+		Payload []struct {
+			Text          string `xml:",chardata"`
+			Dir           string `xml:"dir,attr"`
+			Typename      string `xml:"typename,attr"`
+			Sizechecktype string `xml:"sizechecktype,attr"`
+		} `xml:"payload"`
+	} `xml:"opcode"`
 }
 
 func (packet *EQPacket) String() string {
-	return fmt.Sprintf("&{OpCode: %#x (%s), Size: %d, Timestamp: %s, Source: %s:%s, Destination: %s:%s}", packet.OpCode, packet.OpCodeLabel, len(packet.Data), packet.Timestamp.Format(time.RFC3339), packet.SourceIP.String(), packet.SourcePort, packet.DestinationIP.String(), packet.DestinationPort)
+	return fmt.Sprintf("&{OpCode: 0x%x (%s), Size: %d, Timestamp: %s, Source: %s:%s, Destination: %s:%s}", packet.OpCode, packet.OpCodeLabel, len(packet.Data), packet.Timestamp.Format(time.RFC3339), packet.SourceIP, packet.SourcePort, packet.DestinationIP, packet.DestinationPort)
 }

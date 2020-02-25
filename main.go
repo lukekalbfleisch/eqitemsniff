@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"runtime"
@@ -93,7 +94,7 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 	if err != nil {
 		return errors.Wrap(err, "startCapture")
 	}
-	cancel()
+	log.Debug().Msg("capture finished, cleaning up")
 	select {
 	case <-ctx.Done():
 	case <-time.After(10 * time.Second):
@@ -150,6 +151,7 @@ func device(ctx context.Context, g *gui.GUI) (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, "devicelist")
 	}
+	log.Debug().Msg("listing devices")
 	deviceName := ""
 	select {
 	case deviceName = <-deviceChan:
@@ -167,18 +169,19 @@ func device(ctx context.Context, g *gui.GUI) (string, error) {
 }
 
 func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
-	captureStopChan := make(chan bool)
-	err := g.StartCapture(captureStopChan)
-	if err != nil {
-		return errors.Wrap(err, "startCapture gui")
-	}
-
-	var packets []*analyzer.EQPacket
 
 	a, err := analyzer.New()
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize analyzer")
 	}
+
+	captureStopChan := make(chan bool)
+	err = g.StartCapture(captureStopChan)
+	if err != nil {
+		return errors.Wrap(err, "startCapture gui")
+	}
+
+	var packets []*analyzer.EQPacket
 
 	a.GoDump = false
 	a.HexDump = false
@@ -189,8 +192,16 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 		return errors.Wrap(err, "failed to start capture")
 	}
 	defer handle.Close()
-
+	//live
 	filter := "udp and (src host 69.174 or dst host 69.174)"
+
+	//eqemu
+	//filter := "udp and (src host 13.66 or dst host 13.66)"
+
+	//filter := "udp and (src host 24.180 or dst host 24.180)"
+
+	//filter := "udp[0:2] > 1024 and udp[2:2] > 1024 and ether proto 0x0800"
+
 	log.Info().Msgf("capturing with filter: %s", filter)
 	err = handle.SetBPFFilter(filter)
 	if err != nil {
@@ -203,23 +214,30 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
+	totalPackets := 0
+
 	for psPacket := range packetSource.Packets() {
 		select {
 		case <-captureStopChan:
 			return nil
 		case <-ctx.Done():
+			log.Debug().Msg("got exit, aborting packet capture")
 			return nil
 		default:
 		}
 
-		packets, err = a.DecodePSPacket(psPacket)
+		packets, err = a.PacketStep1(psPacket)
+		//packets, err = a.DecodePSPacket(psPacket)
 		if err != nil {
-			log.Warn().Err(err).Msg("decodepspacket")
+			log.Warn().Err(err).Msg("process packet")
+			continue
 			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
 			//fmt.Printf("failed to decode: %s\n", err.Error())
 		}
 
 		for _, packet := range packets {
+			totalPackets++
+			g.SetStatus(fmt.Sprintf("%d packets", totalPackets))
 			if packet.OpCodeLabel != "Unknown" {
 				log.Info().Str("opcode", packet.OpCodeLabel).Msgf(a.Dump(packet.Data))
 			}
@@ -227,16 +245,21 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 			if len(packet.Data) == 0 {
 				continue
 			}
-			if len(packet.Data) == 16 {
+			/*if len(packet.Data) == 16 {
 				continue
 			}
 			if len(packet.Data) == 36 {
 				continue
+			}*/
+			if len(packet.Data) < 3 {
+				continue
 			}
 			g.AddPacket(packet)
+			log.Info().Str("packet", packet.String()).Msg("got finished packet")
+			log.Info().Msgf("packet dump: %s", hex.Dump(packet.Data))
 
-			log.Info().Msg(packet.String())
-			log.Info().Msg(a.Dump(packet.Data))
+			//log.Info().Msg(packet.String())
+			//log.Info().Msg(a.Dump(packet.Data))
 			//fmt.Println(a.Dump(packet.Data))
 			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
 			//fmt.Println("final packet", packet)
