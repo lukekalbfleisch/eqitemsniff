@@ -90,9 +90,9 @@ func run(ctx context.Context, cancel context.CancelFunc) error {
 
 	g.SetStatus(fmt.Sprintf("selected %s", deviceName))
 
-	err = startCapture(ctx, g, deviceName)
+	err = capture(ctx, g, deviceName)
 	if err != nil {
-		return errors.Wrap(err, "startCapture")
+		return errors.Wrap(err, "capture")
 	}
 	log.Debug().Msg("capture finished, cleaning up")
 	select {
@@ -141,11 +141,12 @@ func device(ctx context.Context, g *gui.GUI) (string, error) {
 			continue
 		}
 
-		devices = append(devices, fmt.Sprintf("%d) %s [%s] %s %s", i, device.Name, ipName, device.Description, suggestText))
+		devices = append(devices, fmt.Sprintf("%d) %s [%s] - %s %s", i, ipName, device.Name, device.Description, suggestText))
 		//log.Info().Str("name", device.Name).Str("description", device.Description).Interface("addresses", device.Addresses).Msgf("networkID: %d", i)
 		i++
 	}
 
+	log.Debug().Strs("devices", devices).Msg("device list")
 	deviceChan := make(chan string)
 	err = g.DeviceList(devices, deviceChan)
 	if err != nil {
@@ -158,17 +159,20 @@ func device(ctx context.Context, g *gui.GUI) (string, error) {
 	case <-ctx.Done():
 		return "", nil
 	}
-	if strings.Contains(deviceName, ")") {
-		deviceName = deviceName[strings.Index(deviceName, ")")+2:]
-	}
+
 	if strings.Contains(deviceName, "[") {
-		deviceName = deviceName[:strings.Index(deviceName, "[")-1]
+		deviceName = deviceName[strings.Index(deviceName, "[")+1:]
 	}
+
+	if strings.Contains(deviceName, "]") {
+		deviceName = deviceName[:strings.Index(deviceName, "]")]
+	}
+
 	return deviceName, nil
 
 }
 
-func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
+func capture(ctx context.Context, g *gui.GUI, deviceName string) error {
 
 	a, err := analyzer.New()
 	if err != nil {
@@ -178,7 +182,7 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 	captureStopChan := make(chan bool)
 	err = g.StartCapture(captureStopChan)
 	if err != nil {
-		return errors.Wrap(err, "startCapture gui")
+		return errors.Wrap(err, "capture gui")
 	}
 
 	var packets []*analyzer.EQPacket
@@ -186,7 +190,7 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 	a.GoDump = false
 	a.HexDump = false
 
-	log.Debug().Msg("opening capture")
+	log.Debug().Msg("pcap openlive")
 	handle, err := pcap.OpenLive(deviceName, 1600, false, pcap.BlockForever)
 	if err != nil {
 		return errors.Wrap(err, "failed to start capture")
@@ -208,22 +212,18 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 		return errors.Wrapf(err, "bpffilter(%s):", filter)
 	}
 
-	//	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip4, &ip6, &tcp, &udp, &dns, &payload)
-
-	//decodedLayers := make([]gopacket.LayerType, 0, 10)
-
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 
 	totalPackets := 0
-
-	for psPacket := range packetSource.Packets() {
+	var psPacket gopacket.Packet
+	for {
 		select {
 		case <-captureStopChan:
 			return nil
 		case <-ctx.Done():
 			log.Debug().Msg("got exit, aborting packet capture")
 			return nil
-		default:
+		case psPacket = <-packetSource.Packets():
 		}
 
 		packets, err = a.PacketStep1(psPacket)
@@ -237,6 +237,7 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 
 		for _, packet := range packets {
 			totalPackets++
+
 			g.SetStatus(fmt.Sprintf("%d packets", totalPackets))
 			if packet.OpCodeLabel != "Unknown" {
 				log.Info().Str("opcode", packet.OpCodeLabel).Msgf(a.Dump(packet.Data))
@@ -254,24 +255,10 @@ func startCapture(ctx context.Context, g *gui.GUI, deviceName string) error {
 			if len(packet.Data) < 3 {
 				continue
 			}
+
 			g.AddPacket(packet)
 			log.Info().Str("packet", packet.String()).Msg("got finished packet")
 			log.Info().Msgf("packet dump: %s", hex.Dump(packet.Data))
-
-			//log.Info().Msg(packet.String())
-			//log.Info().Msg(a.Dump(packet.Data))
-			//fmt.Println(a.Dump(packet.Data))
-			//fmt.Printf("Src: %s:%d Dst: %s:%d Size: %d\n%s", ipv4.SrcIP.String(), udp.SrcPort, ipv4.DstIP.String(), udp.DstPort, len(data), hex.Dump(data))
-			//fmt.Println("final packet", packet)
-
-			//var adv *analyzer.AdvLoot
-			//adv, err = analyzer.NewAdvLoot(packet.Data)
-			//if err == nil && adv != nil { //&& packet.DestinationPort == "57889" {
-			//	fmt.Println(a.Dump(packet.Data))
-			//	fmt.Println(packet.DestinationPort, adv)
-			//}
-			//fmt.Println(i, packet, knownCode)
 		}
 	}
-	return nil
 }

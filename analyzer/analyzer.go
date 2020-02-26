@@ -63,6 +63,7 @@ type Analyzer struct {
 	HexDump         bool
 	OpCodes         []*SEQOPCodeXML
 	advLootPattern  []byte
+	zonePattern     []byte
 }
 
 // Fragment is partial packets received
@@ -78,6 +79,10 @@ func New() (*Analyzer, error) {
 	a.advLootPattern, err = hex.DecodeString("42c07003000000c4d8a7008d940400cb29")
 	if err != nil {
 		return nil, errors.Wrap(err, "advlootpattern decode")
+	}
+	a.zonePattern, err = hex.DecodeString("aa4b2c")
+	if err != nil {
+		return nil, errors.Wrap(err, "zonepattern decode")
 	}
 
 	a.Fragments = map[uint16][]byte{}

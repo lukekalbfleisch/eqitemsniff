@@ -132,7 +132,7 @@ func (g *GUI) DeviceList(devices []string, deviceChan chan string) error {
 	g.deviceChan = deviceChan
 	g.devices = devices
 	g.mutex.Unlock()
-	log.Debug().Msg("got device list")
+	log.Debug().Msgf("got %d devices", len(g.devices))
 	return nil
 }
 
@@ -239,10 +239,11 @@ func (g *GUI) loop() {
 				if ev.Key() == tcell.KeyEscape {
 					ecnt++
 					g.mutex.Lock()
-					g.status = "escape pressed once"
+					g.status = "escape pressed, press again to exit"
 					g.mutex.Unlock()
 					log.Debug().Msgf("escape pressed %d times", ecnt)
 					if ecnt > 1 {
+						g.status = "exiting..."
 						g.cancel()
 						log.Info().Msg("exiting via escape sequence")
 						return
