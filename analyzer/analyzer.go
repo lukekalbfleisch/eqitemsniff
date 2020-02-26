@@ -62,6 +62,7 @@ type Analyzer struct {
 	GoDump          bool
 	HexDump         bool
 	OpCodes         []*SEQOPCodeXML
+	advLootPattern  []byte
 }
 
 // Fragment is partial packets received
@@ -72,12 +73,17 @@ type Fragment struct {
 
 // New creates a new Analyzer
 func New() (*Analyzer, error) {
+	var err error
 	a := new(Analyzer)
+	a.advLootPattern, err = hex.DecodeString("42c07003000000c4d8a7008d940400cb29")
+	if err != nil {
+		return nil, errors.Wrap(err, "advlootpattern decode")
+	}
 
 	a.Fragments = map[uint16][]byte{}
 
 	log.Debug().Msg("scan for xml")
-	err := filepath.Walk(".", func(path string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(".", func(path string, fi os.FileInfo, err error) error {
 		if fi == nil {
 			return nil
 		}

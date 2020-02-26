@@ -10,5 +10,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.4
 	github.com/pkg/errors v0.8.1
 	github.com/rs/zerolog v1.18.0
+	github.com/stretchr/testify v1.3.0
 	github.com/xackery/eqemuconfig v0.0.2
 )
