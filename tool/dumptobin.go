@@ -20,7 +20,10 @@ func main() {
 }
 
 func run() error {
-	basePath := "../analyzer/item.1"
+	if len(os.Args) < 2 {
+		return fmt.Errorf("need path")
+	}
+	basePath := os.Args[1]
 	path := basePath + ".txt"
 	f, err := os.Open(path)
 	if err != nil {
