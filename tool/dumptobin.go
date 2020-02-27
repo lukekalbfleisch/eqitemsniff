@@ -20,13 +20,14 @@ func main() {
 }
 
 func run() error {
-	path := "../analyzer/item.0.pkt"
+	basePath := "../analyzer/item.1"
+	path := basePath + ".txt"
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	w, err := os.Create(path + ".out")
+	w, err := os.Create(path + ".hexdump")
 	if err != nil {
 		return err
 	}
