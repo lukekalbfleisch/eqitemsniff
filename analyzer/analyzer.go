@@ -62,8 +62,6 @@ type Analyzer struct {
 	GoDump          bool
 	HexDump         bool
 	OpCodes         []*SEQOPCodeXML
-	advLootPattern  []byte
-	zonePattern     []byte
 }
 
 // Fragment is partial packets received
@@ -76,14 +74,6 @@ type Fragment struct {
 func New() (*Analyzer, error) {
 	var err error
 	a := new(Analyzer)
-	a.advLootPattern, err = hex.DecodeString("42c07003000000c4d8a7008d940400cb29")
-	if err != nil {
-		return nil, errors.Wrap(err, "advlootpattern decode")
-	}
-	a.zonePattern, err = hex.DecodeString("aa4b2c")
-	if err != nil {
-		return nil, errors.Wrap(err, "zonepattern decode")
-	}
 
 	a.Fragments = map[uint16][]byte{}
 
@@ -340,8 +330,20 @@ func (a *Analyzer) packetStep3(data []byte, psPacket gopacket.Packet) (*EQPacket
 		return nil, fmt.Errorf("ipv4 is nil")
 	}
 
-	packet.SourceIP = ipv4.SrcIP.String()
-	packet.DestinationIP = ipv4.DstIP.String()
+	packet.SourceIP = ipv4.SrcIP
+	packet.DestinationIP = ipv4.DstIP
+
+	udpLayer := psPacket.Layer(layers.LayerTypeUDP)
+	if udpLayer == nil {
+		return nil, fmt.Errorf("udpLayer is nil")
+	}
+	udp, _ := udpLayer.(*layers.UDP)
+	if packet.IsFromServer() {
+		packet.ClientPort = udp.DstPort.String()
+	} else {
+		packet.ClientPort = udp.SrcPort.String()
+	}
+
 	packet.Timestamp = psPacket.Metadata().Timestamp
 	offset := 2
 	/*

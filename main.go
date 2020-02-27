@@ -238,7 +238,6 @@ func capture(ctx context.Context, g *gui.GUI, deviceName string) error {
 		for _, packet := range packets {
 			totalPackets++
 
-			g.SetStatus(fmt.Sprintf("%d packets", totalPackets))
 			if packet.OpCodeLabel != "Unknown" {
 				log.Info().Str("opcode", packet.OpCodeLabel).Msgf(a.Dump(packet.Data))
 			}

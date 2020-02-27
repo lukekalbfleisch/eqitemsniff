@@ -1,14 +1,11 @@
 package analyzer
 
-import (
-	"fmt"
-)
-
 // Item represents an item
 type Item struct {
 }
 
-func (a *Analyzer) itemScan(packet *EQPacket) error {
+// ItemScan returns an item
+func (a *Analyzer) ItemScan(packet *EQPacket) *Item {
 	dataSize := len(packet.Data)
 	itOffset := -1
 	for i, d := range packet.Data {
@@ -24,5 +21,5 @@ func (a *Analyzer) itemScan(packet *EQPacket) error {
 		return nil
 	}
 
-	return fmt.Errorf("offset at %d", itOffset)
+	return nil
 }

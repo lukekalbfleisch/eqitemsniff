@@ -18,9 +18,8 @@ func TestItem(t *testing.T) {
 	if !assert.NoError(err) {
 		t.Fatal(err)
 	}
-	err = a.itemScan(packet)
-	if !assert.NoError(err) {
-		t.Fatal(err)
-	}
+	item := a.ItemScan(packet)
+	t.Log(item)
+
 	t.Fatal("done")
 }

@@ -3,7 +3,11 @@ package analyzer
 import (
 	"encoding/hex"
 	"fmt"
+
+	"github.com/rs/zerolog/log"
 )
+
+var zonePattern []byte
 
 // Zone represents a zone op entry
 type Zone struct {
@@ -12,15 +16,24 @@ type Zone struct {
 	Longname  string
 }
 
-func (a *Analyzer) zoneScan(packet *EQPacket) error {
+func init() {
+	zonePattern, _ = hex.DecodeString("aa4b2c")
+}
+
+// ZoneScan returns a zone struct
+func ZoneScan(packet *EQPacket) *Zone {
 	dataSize := len(packet.Data)
-	if dataSize < len(a.zonePattern)+50 {
+	if dataSize < len(zonePattern)+50 {
 		return nil
 	}
+	if dataSize < 300 {
+		return nil
+	}
+
 	idx := -1
 	isFound := false
-	for idx = 0; idx < dataSize-len(a.zonePattern); idx++ {
-		if hex.EncodeToString(packet.Data[idx:idx+len(a.zonePattern)]) == hex.EncodeToString(a.zonePattern) {
+	for idx = 0; idx < dataSize-len(zonePattern); idx++ {
+		if hex.EncodeToString(packet.Data[idx:idx+len(zonePattern)]) == hex.EncodeToString(zonePattern) {
 			isFound = true
 			break
 		}
@@ -52,6 +65,6 @@ func (a *Analyzer) zoneScan(packet *EQPacket) error {
 	}
 	zone.Longname = fmt.Sprintf("%s", tData)
 
-	fmt.Println(zone)
-	return nil
+	log.Debug().Interface("zone", zone).Msg("got new zone")
+	return zone
 }

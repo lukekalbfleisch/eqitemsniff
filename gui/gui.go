@@ -3,7 +3,6 @@ package gui
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -24,30 +23,15 @@ type GUI struct {
 	status          string
 	defaultStyle    tcell.Style
 	blueStyle       tcell.Style
-	captureStyle    tcell.Style
 	isDeviceList    bool
 	deviceChan      chan string
 	devices         []string
 	isCaptureMode   bool
 	captureStopChan chan bool
-	packets         []*Packet
+	packets         *packetCollection
 	packetCount     int
 	eventChan       chan tcell.Event
-}
-
-type byTime []*Packet
-
-func (s byTime) Less(i, j int) bool { return s[i].LastAdded.Before(s[j].LastAdded) }
-func (s byTime) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s byTime) Len() int           { return len(s) }
-
-// Packet displays a eqpacket
-type Packet struct {
-	OpCode    uint16
-	Count     int
-	Packets   []*analyzer.EQPacket
-	LastAdded time.Time
-	LastSize  int
+	start           time.Time
 }
 
 // New creates a new GUI
@@ -55,7 +39,7 @@ func New(ctx context.Context, cancel context.CancelFunc) (*GUI, error) {
 	g := &GUI{
 		ctx:       ctx,
 		cancel:    cancel,
-		packets:   []*Packet{},
+		packets:   &packetCollection{},
 		eventChan: make(chan tcell.Event),
 	}
 	encoding.Register()
@@ -92,32 +76,8 @@ func (g *GUI) Clear() {
 // AddPacket adds a new packet to track
 func (g *GUI) AddPacket(packet *analyzer.EQPacket) {
 	g.mutex.Lock()
-
-	isFound := false
-	for _, p := range g.packets {
-		if p.OpCode != packet.OpCode {
-			continue
-		}
-		p.Packets = append(p.Packets, packet)
-		p.Count = len(p.Packets)
-		p.LastAdded = time.Now()
-		p.LastSize = len(packet.Data)
-		isFound = true
-		break
-	}
-	if !isFound {
-		p := &Packet{
-			Count:     1,
-			Packets:   []*analyzer.EQPacket{},
-			OpCode:    packet.OpCode,
-			LastAdded: time.Now(),
-			LastSize:  len(packet.Data),
-		}
-		p.Packets = append(p.Packets, packet)
-		g.packets = append(g.packets, p)
-	}
-	sort.Sort(sort.Reverse(byTime(g.packets)))
-
+	g.packets.add(packet)
+	g.packetCount++
 	g.mutex.Unlock()
 }
 
@@ -142,6 +102,7 @@ func (g *GUI) StartCapture(captureStopChan chan bool) error {
 	g.isCaptureMode = true
 	g.captureStopChan = captureStopChan
 	g.status = "started capture"
+	g.start = time.Now()
 	g.mutex.Unlock()
 	return nil
 }
@@ -166,11 +127,18 @@ func (g *GUI) event() {
 func (g *GUI) loop() {
 	s := g.screen
 	posfmt := "Mouse: %d, %d  "
-	btnfmt := "Buttons: %s"
 	keyfmt := "Keys: %s"
 	g.blueStyle = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkBlue)
-	g.captureStyle = tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkRed)
-
+	capStyles := []tcell.Style{
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkGreen),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkRed),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkOrange),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorBlack),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkSeaGreen),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkSalmon),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkGoldenrod),
+		tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDarkGray),
+	}
 	mx, my := -1, -1
 	w, h := s.Size()
 	bstr := ""
@@ -185,41 +153,111 @@ func (g *GUI) loop() {
 		st := tcell.StyleDefault.Background(tcell.ColorRed)
 		w, h = s.Size()
 
-		if !g.isDeviceList {
+		if g.isDeviceList {
 			s := g.screen
 			w, h := s.Size()
 
-			drawBox(s, 36, 1, w-1, h-2, g.blueStyle, ' ')
-			emitStr(s, 37, 2, g.blueStyle, "Select which device to listen to")
+			drawBox(s, 29, 1, w-1, h-2, g.blueStyle, ' ')
 
 			for i, device := range g.devices {
-				emitStr(s, 37, i+4, g.blueStyle, device)
+				emitStr(s, 30, i+4, g.blueStyle, device)
 			}
+			emitStr(s, 30, 2, g.blueStyle, "Select which device to listen on")
 		}
 
 		statusHeight := 6
 
 		if g.isCaptureMode {
-			drawBox(s, 36, 1, w-1, h-2, g.captureStyle, ' ')
-			emitStr(s, 37, 2, g.captureStyle, "Capturing...")
-			i := 0
-			for _, packet := range g.packets {
-				emitStr(s, 37, i+3, g.captureStyle, fmt.Sprintf("0x%x %d [%d bytes]", packet.OpCode, len(packet.Packets), packet.LastSize))
-				i++
-				if i > h-6 {
+
+			maxWidth := w - 2 - 27
+
+			metaCount := len(g.packets.metas)
+			if metaCount > 10 {
+				metaCount = 10
+			}
+			if metaCount < 0 {
+				metaCount = 1
+			}
+
+			colWidth := 14 // minimum col width
+
+			//figure out how many columns to display
+			for metaCount == 1 {
+				if maxWidth/metaCount < colWidth {
+					metaCount--
+					continue
+				}
+				break
+			}
+			if metaCount < 1 {
+				metaCount = 1
+			}
+
+			colWidth = maxWidth / metaCount
+			//98
+
+			colIndex := 0
+			x := 29
+
+			for _, pm := range g.packets.metas {
+				if colIndex > metaCount {
 					break
 				}
+				drawBox(s, x, 1, x+colWidth, h-2, capStyles[colIndex], ' ')
+				emitStr(s, x+1, 2, capStyles[colIndex], pm.Character)
+				emitStr(s, x+1, 3, capStyles[colIndex], pm.Zone)
+
+				i := 4
+				for j, advloot := range pm.advloots {
+					if i > h-3 {
+						break
+					}
+					if j == 0 {
+						emitStr(s, x+1, i, capStyles[colIndex], "--AdvLoot--")
+						i++
+					}
+					if i > h-3 {
+						break
+					}
+					if j > 4 {
+						break
+					}
+					emitStr(s, x+1, i, capStyles[colIndex], fmt.Sprintf("%s (%d)", advloot.Name, advloot.Count))
+					i++
+				}
+
+				for j, packet := range pm.packets {
+					if i > h-3 {
+						break
+					}
+					if j == 0 {
+						emitStr(s, x+1, i, capStyles[colIndex], "--Raw--")
+						i++
+					}
+					if i > h-3 {
+						break
+					}
+					emitStr(s, x+1, i, capStyles[colIndex], fmt.Sprintf("0x%x %d [%d]", packet.OpCode, len(packet.Packets), packet.LastSize))
+					i++
+				}
+				colIndex++
+				x += colWidth
 			}
 
 			statusHeight = h - 2
+
 		}
 
-		drawBox(s, 1, 1, 35, statusHeight, g.blueStyle, ' ')
+		drawBox(s, 1, 1, 28, statusHeight, g.blueStyle, ' ')
 		emitStr(s, 2, 2, g.blueStyle, "Press ESC twice to exit")
 		emitStr(s, 2, 3, g.blueStyle, fmt.Sprintf(posfmt, mx, my))
-		emitStr(s, 2, 4, g.blueStyle, fmt.Sprintf(btnfmt, bstr))
-		emitStr(s, 2, 5, g.blueStyle, fmt.Sprintf(keyfmt, lks))
+		emitStr(s, 2, 4, g.blueStyle, fmt.Sprintf(keyfmt, lks))
+		if g.isCaptureMode {
 
+			emitStr(s, 2, 6, g.blueStyle, fmt.Sprintf("Packets processed: %d", g.packetCount))
+			emitStr(s, 2, 7, g.blueStyle, fmt.Sprintf("Time Ran: %0.0fs", time.Since(g.start).Seconds()))
+
+		}
 		g.drawStatusBar(g.blueStyle)
 
 		s.Show()

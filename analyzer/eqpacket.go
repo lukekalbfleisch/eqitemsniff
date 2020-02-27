@@ -3,19 +3,55 @@ package analyzer
 import (
 	"encoding/xml"
 	"fmt"
+	"net"
 	"time"
 )
 
+var privateIPBlocks []*net.IPNet
+
 // EQPacket represents a completed EQ packet
 type EQPacket struct {
-	OpCode          uint16
-	OpCodeLabel     string
-	SourceIP        string
-	SourcePort      string
-	DestinationIP   string
-	DestinationPort string
-	Data            []byte
-	Timestamp       time.Time
+	OpCode        uint16
+	OpCodeLabel   string
+	SourceIP      net.IP
+	ClientPort    string
+	DestinationIP net.IP
+	Data          []byte
+	Timestamp     time.Time
+}
+
+func init() {
+	for _, cidr := range []string{
+		"127.0.0.0/8",    // IPv4 loopback
+		"10.0.0.0/8",     // RFC1918
+		"172.16.0.0/12",  // RFC1918
+		"192.168.0.0/16", // RFC1918
+		"169.254.0.0/16", // RFC3927 link-local
+		"::1/128",        // IPv6 loopback
+		"fe80::/10",      // IPv6 link-local
+		"fc00::/7",       // IPv6 unique local addr
+	} {
+		_, block, err := net.ParseCIDR(cidr)
+		if err != nil {
+			panic(fmt.Errorf("parse error on %q: %v", cidr, err))
+		}
+		privateIPBlocks = append(privateIPBlocks, block)
+	}
+}
+
+// IsFromServer returns true if dstIP is a private ip address
+func (packet *EQPacket) IsFromServer() bool {
+	ip := packet.DestinationIP
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+
+	for _, block := range privateIPBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // SEQOPCodeXML is parsed from ShowEQ
@@ -48,5 +84,6 @@ type SEQOPCodeXML struct {
 }
 
 func (packet *EQPacket) String() string {
-	return fmt.Sprintf("&{OpCode: 0x%x (%s), Size: %d, Timestamp: %s, Source: %s:%s, Destination: %s:%s}", packet.OpCode, packet.OpCodeLabel, len(packet.Data), packet.Timestamp.Format(time.RFC3339), packet.SourceIP, packet.SourcePort, packet.DestinationIP, packet.DestinationPort)
+	return ""
+	//return fmt.Sprintf("&{OpCode: 0x%x (%s), Size: %d, Timestamp: %s, Source: %s:%s, Destination: %s:%s}", packet.OpCode, packet.OpCodeLabel, len(packet.Data), packet.Timestamp.Format(time.RFC3339), packet.SourceIP, packet.SourcePort, packet.DestinationIP, packet.DestinationPort)
 }
