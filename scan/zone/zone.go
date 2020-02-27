@@ -1,10 +1,11 @@
-package analyzer
+package zone
 
 import (
 	"encoding/hex"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+	"github.com/xackery/eqitemsniff/analyzer"
 )
 
 var zonePattern []byte
@@ -20,8 +21,8 @@ func init() {
 	zonePattern, _ = hex.DecodeString("aa4b2c")
 }
 
-// ZoneScan returns a zone struct
-func ZoneScan(packet *EQPacket) *Zone {
+// Scan returns a zone struct
+func Scan(packet *analyzer.EQPacket) *Zone {
 	dataSize := len(packet.Data)
 	if dataSize < len(zonePattern)+50 {
 		return nil

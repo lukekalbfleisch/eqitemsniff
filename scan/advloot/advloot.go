@@ -1,4 +1,4 @@
-package analyzer
+package advloot
 
 import (
 	"encoding/binary"
@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog/log"
+	"github.com/xackery/eqitemsniff/analyzer"
 )
 
 // AdvLoot struct
@@ -15,11 +16,11 @@ type AdvLoot struct {
 	Name      string
 	Count     uint16
 	Timestamp time.Time
-	Items     []AdvLootItem
+	Items     []Item
 }
 
-// AdvLootItem struct
-type AdvLootItem struct {
+// Item struct
+type Item struct {
 	ID    uint16
 	Name  string
 	Count uint16
@@ -31,8 +32,8 @@ func init() {
 	advLootPattern, _ = hex.DecodeString("42c07003000000c4d8a7008d940400cb29")
 }
 
-// AdvlootScan returns an advloot struct
-func AdvlootScan(packet *EQPacket) *AdvLoot {
+// Scan returns an advloot struct
+func Scan(packet *analyzer.EQPacket) *AdvLoot {
 
 	maxOffset := len(packet.Data) - len(advLootPattern)
 	if maxOffset < 1 {
@@ -56,7 +57,7 @@ func AdvlootScan(packet *EQPacket) *AdvLoot {
 
 	advloot := &AdvLoot{
 		Timestamp: packet.Timestamp,
-		Items:     []AdvLootItem{},
+		Items:     []Item{},
 	}
 
 	//id
@@ -78,7 +79,7 @@ func AdvlootScan(packet *EQPacket) *AdvLoot {
 	advLootOffset++
 
 	for i := 0; i < int(advloot.Count); i++ {
-		item := AdvLootItem{}
+		item := Item{}
 		item.ID = binary.LittleEndian.Uint16(packet.Data[advLootOffset : advLootOffset+2])
 		//fmt.Printf("id %X\n", packet.Data[advLootOffset:advLootOffset+2])
 		advLootOffset += 21

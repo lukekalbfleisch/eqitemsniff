@@ -9,10 +9,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"github.com/xackery/eqitemsniff/analyzer"
 )
 
-// ItemScan returns an item
-func (a *Analyzer) ItemScan(packet *EQPacket) *Item {
+// Scan returns an item
+func Scan(packet *analyzer.EQPacket) *Item {
 	dataSize := len(packet.Data)
 	itOffset := -1
 	for i, d := range packet.Data {

@@ -7,6 +7,8 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/xackery/eqitemsniff/analyzer"
+	"github.com/xackery/eqitemsniff/scan/advloot"
+	"github.com/xackery/eqitemsniff/scan/zone"
 )
 
 type packetCollection struct {
@@ -18,7 +20,7 @@ type packetMeta struct {
 	Zone      string
 	Character string
 	packets   []*packetEntry
-	advloots  []*analyzer.AdvLoot
+	advloots  []*advloot.AdvLoot
 }
 
 type packetEntry struct {
@@ -37,7 +39,7 @@ func (p *packetCollection) add(packet *analyzer.EQPacket) error {
 		return fmt.Errorf("nil packet")
 	}
 
-	z := analyzer.ZoneScan(packet)
+	z := zone.Scan(packet)
 	char := fmt.Sprintf("Unknown %s", packet.ClientPort)
 	zone := "Unknown"
 	if z != nil {
@@ -95,7 +97,7 @@ func (p *packetCollection) add(packet *analyzer.EQPacket) error {
 
 	sort.Sort(sort.Reverse(byTime(pm.packets)))
 
-	advloot := analyzer.AdvlootScan(packet)
+	advloot := advloot.Scan(packet)
 	if advloot != nil {
 		pm.advloots = append(pm.advloots, advloot)
 	}
